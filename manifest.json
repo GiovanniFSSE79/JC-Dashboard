@@ -1,0 +1,17 @@
+{
+  "name": "JC Emprendimentos – Gestão de Obras",
+  "short_name": "JC Dash",
+  "description": "JC Emprendimentos - Dashboard Financeiro de Obras",
+  "start_url": "./JC_Dashboard_v7.html",
+  "display": "standalone",
+  "background_color": "#1a2744",
+  "theme_color": "#1a2744",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

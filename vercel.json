@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/", "destination": "/JC_Dashboard_v7.html" }
+  ]
+}
