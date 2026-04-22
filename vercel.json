@@ -1,5 +1,14 @@
 {
   "rewrites": [
-    { "source": "/", "destination": "/JC_Dashboard_v7.html" }
+    { "source": "/", "destination": "/index.html" },
+    { "source": "/(.*)", "destination": "/$1" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    }
   ]
 }

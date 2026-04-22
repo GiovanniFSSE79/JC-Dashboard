@@ -1,8 +1,9 @@
-const CACHE_NAME = 'jc-dashboard-v7';
+const CACHE_NAME = 'jc-dashboard-v8';
 const urlsToCache = [
-  './JC_Dashboard_v7.html',
-  './manifest.json',
-  './icon.svg'
+  '/JC_Dashboard_v8.html',
+  '/manifest.json',
+  '/icon.svg',
+  '/index.html'
 ];
 
 self.addEventListener('install', event => {
@@ -18,6 +19,7 @@ self.addEventListener('activate', event => {
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
     )
   );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {

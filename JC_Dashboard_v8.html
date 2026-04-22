@@ -6,13 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1a2744">
+<link rel="manifest" href="/manifest.json">
 <title>JC Emprendimentos – Gestão de Obras</title>
-<link rel="manifest" href="./manifest.json">
-<meta name="description" content="JC Emprendimentos – Dashboard de Gestão de Obras">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap');
 :root{
@@ -297,7 +293,7 @@ input:focus,select:focus{border-color:var(--blue)}
   <div id="pageObra" class="page">
     <button class="back-btn" onclick="voltarHome()">
       <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-      Todas as Obras
+      Obras JC
     </button>
 
     <!-- Tabs -->
@@ -650,7 +646,7 @@ function renderSidebar(){
   nav.innerHTML=`
     <a class="${!obraAtual?'active':''}" onclick="voltarHome()">
       <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-      Todas as Obras
+      Obras JC
     </a>
     <div class="sb-section">Obras</div>
   ` + obras.map(o=>`
@@ -875,9 +871,7 @@ function renderObraCc(){
 
   // Filters
   const ccItems=[
-    {key:'obra',lbl:o.codigo+' '+o.nome.split('–').slice(-1)[0].trim()},
-    {key:'admin',lbl:'1 - Administrativo'},{key:'fin',lbl:'2 - Financeiro'},
-    {key:'com',lbl:'3 - Comercial'},{key:'ope',lbl:'4 - Operacional'}
+    {key:'obra',lbl:o.codigo+' '+o.nome.split('–').slice(-1)[0].trim()}
   ];
   document.getElementById('ccFilters').innerHTML=ccItems.map((c,i)=>`
     <div class="cc-filter-item ${i===0?'active':''}" onclick="filterCC(this,'${c.key}')">${c.lbl}</div>
@@ -964,7 +958,6 @@ function addNFs(input){
     const tipo=['pdf'].includes(ext)?'pdf':['jpg','jpeg','png','webp'].includes(ext)?'img':'other';
     obraAtual.notasFiscais.push({id:Date.now()+Math.random(),nome:f.name,tipo,tam:f.size,data:new Date().toLocaleDateString('pt-BR')});
   });
-  saveState();
   renderNFs();
   toast('✓ '+input.files.length+' nota(s) anexada(s)');
   input.value='';
@@ -984,7 +977,7 @@ function renderNFs(){
       <div style="font-size:.76rem;font-weight:600">Adicionar</div>
     </div>`;
 }
-function removeNF(id){if(obraAtual){obraAtual.notasFiscais=obraAtual.notasFiscais.filter(n=>n.id!==id);saveState();renderNFs();}}
+function removeNF(id){if(obraAtual){obraAtual.notasFiscais=obraAtual.notasFiscais.filter(n=>n.id!==id);renderNFs();}}
 
 // ══ MODAL OBRA ══
 function openModalNovaObra(id){
@@ -1026,7 +1019,6 @@ function saveObra(){
     toast('✓ Obra criada');
   }
   closeModalObra();
-  saveState();
   renderObrasGrid();
   renderSidebar();
   if(obraAtual) {
@@ -1038,7 +1030,6 @@ function excluirObraAtual(){
   if(!confirm('Excluir esta obra e todos os seus dados? Esta ação não pode ser desfeita.')) return;
   obras=obras.filter(o=>o.id!==editObraId);
   closeModalObra();
-  saveState();
   voltarHome();
   toast('🗑 Obra excluída');
 }
@@ -1094,7 +1085,6 @@ function saveEntry(){
     toast('✓ Lançamento adicionado');
   }
   closeModalLanc();
-  saveState();
   renderTbl();
   renderObraVisao();
 }
@@ -1102,7 +1092,6 @@ function editLanc(id){openModalLanc(id);}
 function delLanc(id){
   if(!confirm('Excluir este lançamento?')) return;
   obraAtual.lancamentos=obraAtual.lancamentos.filter(l=>l.id!==id);
-  saveState();
   renderTbl();renderObraVisao();
   toast('🗑 Excluído');
 }
@@ -1166,7 +1155,6 @@ function confirmImport(){
   impPend=null;
   document.getElementById('impPreview').style.display='none';
   document.getElementById('importInfo').textContent='Importado: '+obraAtual.lancamentos.length+' lançamentos';
-  saveState();
   renderTbl();renderObraVisao();renderNFs();
   toast('✓ Importação concluída');
 }
@@ -1186,7 +1174,6 @@ function importAllJSON(input){
       if(!confirm('Substituir TODAS as obras pelo backup? Esta ação não pode ser desfeita.')) return;
       obras=json.obras;
       obraNextId=Math.max(...obras.map(o=>parseInt(o.id.split('-')[1])||0))+1;
-      saveState();
       voltarHome();
       toast('✓ '+obras.length+' obras importadas');
     }catch(err){toast('❌ Erro: '+err.message);}
@@ -1213,79 +1200,15 @@ function toast(msg){
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2600);
 }
 
-// ══ FIREBASE CONFIG ══
-// Cole aqui o seu firebaseConfig do console.firebase.google.com
-const firebaseConfig = {
-  apiKey: "COLE_AQUI",
-  authDomain: "COLE_AQUI",
-  databaseURL: "COLE_AQUI",
-  projectId: "COLE_AQUI",
-  storageBucket: "COLE_AQUI",
-  messagingSenderId: "COLE_AQUI",
-  appId: "COLE_AQUI"
-};
-
-let db = null;
-let firebaseReady = false;
-
-function initFirebase() {
-  try {
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.database();
-    firebaseReady = true;
-
-    // Escuta atualizações em tempo real de qualquer dispositivo
-    db.ref('jc_obras').on('value', snap => {
-      const d = snap.val();
-      if (d && Array.isArray(d.obras)) {
-        obras = d.obras;
-        obraNextId = d.obraNextId || obraNextId;
-        renderObrasGrid();
-        renderSidebar();
-        if (obraAtual) {
-          obraAtual = obras.find(o => o.id === obraAtual.id) || null;
-          if (obraAtual) obraNav(currentObraTab);
-          else voltarHome();
-        }
-      }
-    });
-  } catch(e) {
-    console.warn('Firebase não configurado, usando localStorage.', e);
-    firebaseReady = false;
-    loadFromLocal();
-  }
-}
-
-// ══ PERSISTENCE ══
-function saveState() {
-  if (firebaseReady && db) {
-    db.ref('jc_obras').set({ obras, obraNextId }).catch(e => console.error('Firebase save error:', e));
-  } else {
-    try { localStorage.setItem('jc_obras', JSON.stringify({ obras, obraNextId })); } catch(e) {}
-  }
-}
-
-function loadFromLocal() {
-  try {
-    const s = localStorage.getItem('jc_obras');
-    if (s) { const d = JSON.parse(s); if (Array.isArray(d.obras)) { obras = d.obras; obraNextId = d.obraNextId || obraNextId; } }
-  } catch(e) {}
-}
-
 // ══ INIT ══
-if (firebaseConfig.apiKey !== 'COLE_AQUI') {
-  initFirebase();
-} else {
-  loadFromLocal();
-}
 renderSidebar();
 renderObrasGrid();
 renderBnav();
-</script>
-<script>
+
+// ══ SERVICE WORKER ══
 if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(err => console.warn('SW:', err));
   });
 }
 </script>
