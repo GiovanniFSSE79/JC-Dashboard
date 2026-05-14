@@ -4033,7 +4033,7 @@ function renderCRTbl() {
   const q = (document.getElementById('crSrch')?.value || '').toLowerCase();
   let items = _crItems.filter(i => {
     if (!_crShowRec && i.recebido) return false;
-    if (q && !i.cliente.toLowerCase().includes(q) && !(i.nf||'').toLowerCase().includes(q)) return false;
+    if (q && !i.cliente.toLowerCase().includes(q) && !(i.nf||'').toLowerCase().includes(q) && !(i.obra||'').toLowerCase().includes(q)) return false;
     return true;
   });
   if (!items.length) {
@@ -4046,7 +4046,10 @@ function renderCRTbl() {
     const rowCls = st === 'vencido' ? 'cr-row-vencido' : st === 'recebido' ? 'cr-row-recebido' : '';
     return `<tr class="${rowCls}">
       <td style="font-weight:600;color:rgba(255,255,255,.9)">${item.nf || '—'}</td>
-      <td>${item.cliente}</td>
+      <td>
+        <div style="font-weight:600;color:rgba(255,255,255,.9)">${item.cliente}</div>
+        ${item.obra ? `<div style="font-size:.68rem;color:var(--muted2);margin-top:2px">${item.obra}</div>` : ''}
+      </td>
       <td style="font-weight:700;color:var(--gold)">${fmt(item.valor || 0)}</td>
       <td>${_crFmtDate(item.venc)}</td>
       <td><span class="cr-status-badge ${st}">${stLabel}</span></td>
@@ -4097,6 +4100,7 @@ function openModalCR(id) {
     const item = _crItems.find(i => i.id === id);
     if (!item) return;
     document.getElementById('cr-cliente').value = item.cliente || '';
+    document.getElementById('cr-obra').value    = item.obra || '';
     document.getElementById('cr-nf').value      = item.nf || '';
     document.getElementById('cr-venc').value    = item.venc || '';
     document.getElementById('cr-valor').value   = item.valor || '';
@@ -4104,6 +4108,7 @@ function openModalCR(id) {
     document.getElementById('cr-obs').value     = item.obs || '';
   } else {
     document.getElementById('cr-cliente').value = '';
+    document.getElementById('cr-obra').value    = '';
     document.getElementById('cr-nf').value      = '';
     document.getElementById('cr-venc').value    = '';
     document.getElementById('cr-valor').value   = '';
@@ -4122,6 +4127,7 @@ function closeModalCR() {
 // ── Salvar no Firebase ────────────────────────────────────
 async function saveCR() {
   const cliente = document.getElementById('cr-cliente').value.trim();
+  const obra    = document.getElementById('cr-obra').value.trim();
   const nf      = document.getElementById('cr-nf').value.trim();
   const venc    = document.getElementById('cr-venc').value;
   const valor   = parseFloat(document.getElementById('cr-valor').value) || 0;
@@ -4137,7 +4143,7 @@ async function saveCR() {
   const uid = await _crGetTargetUid();
   if (!uid) { toast('❌ Não foi possível determinar o usuário'); return; }
 
-  const data = { cliente, nf, venc, valor, recebido, obs, updatedAt: new Date().toISOString() };
+  const data = { cliente, obra, nf, venc, valor, recebido, obs, updatedAt: new Date().toISOString() };
 
   try {
     const colRef = _fbDb.collection('jc_users').doc(uid).collection('jc_contasreceber');
@@ -4259,6 +4265,9 @@ if('serviceWorker' in navigator){
     <div class="modal-title" id="crTitle">Novo Recebimento</div>
     <div class="frow full">
       <div class="fg"><label>Cliente</label><input type="text" id="cr-cliente" placeholder="Ex: Burger King"></div>
+    </div>
+    <div class="frow full">
+      <div class="fg"><label>Nome da Obra</label><input type="text" id="cr-obra" placeholder="Ex: Reforma Loja Centro"></div>
     </div>
     <div class="frow">
       <div class="fg"><label>Número da NF</label><input type="text" id="cr-nf" placeholder="Ex: 00123"></div>
