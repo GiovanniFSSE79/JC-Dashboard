@@ -1640,6 +1640,7 @@ body.viewer-mode #fb-btn-pull { display:none }
       </div>
     </div>
     <div class="toolbar" style="margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <button class="btn btn-primary" onclick="openModalCpGlobal()">+ Novo Boleto</button>
       <button class="btn btn-ghost active" id="cpgFiltroTodos" onclick="cpgSetFiltro('todos',this)">Todos</button>
       <button class="btn btn-ghost" id="cpgFiltroAberto" onclick="cpgSetFiltro('aberto',this)">Em Aberto</button>
       <button class="btn btn-ghost" id="cpgFiltroProximo" onclick="cpgSetFiltro('proximo',this)">⚠ Próximos</button>
@@ -2318,6 +2319,61 @@ body.viewer-mode #fb-btn-pull { display:none }
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModalLanc()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveEntry()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONTAS A PAGAR — GLOBAL (com seletor de obra) -->
+<div class="modal-ov" id="modalCpGlobal" onclick="if(event.target===this)closeModalCpGlobal()">
+  <div class="modal">
+    <div class="modal-drag"></div>
+    <div class="modal-title" id="cpGlobalTitle">Novo Boleto</div>
+    <div class="frow full">
+      <div class="fg">
+        <label>Obra</label>
+        <select id="cpg-obra-sel">
+          <option value="">Selecione a obra…</option>
+        </select>
+      </div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>NF</label><input type="text" id="cpg-nf" placeholder="Ex: 12345"></div>
+      <div class="fg"><label>Data</label><input type="date" id="cpg-data"></div>
+    </div>
+    <div class="frow full">
+      <div class="fg"><label>Empresa</label><input type="text" id="cpg-empresa" placeholder="Ex: Fornecedor X"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Valor (R$)</label><input type="number" id="cpg-valor" min="0" step="0.01" placeholder="0,00" inputmode="decimal"></div>
+      <div class="fg"><label>Parcelas</label><input type="text" id="cpg-parcelas" placeholder="Ex: 1/3, À vista"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Vencimento</label><input type="date" id="cpg-venc"></div>
+      <div class="fg"><label>Banco</label><select id="cpg-banco"></select></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Item de Referência</label>
+        <input type="text" id="cpg-itemref" list="cpg-itemref-list" placeholder="Ex: Custos_de_material">
+        <datalist id="cpg-itemref-list"></datalist>
+      </div>
+      <div class="fg"><label>Subitem</label>
+        <input type="text" id="cpg-subitem" list="cpg-subitem-list" placeholder="Ex: Aluguel de equipamentos">
+        <datalist id="cpg-subitem-list"></datalist>
+      </div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Centro de Custo</label>
+        <input type="text" id="cpg-ccusto" list="cpg-ccusto-list" placeholder="Ex: 2025-001 – Estrutura_Cozinha">
+        <datalist id="cpg-ccusto-list"></datalist>
+      </div>
+      <div class="fg" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="cpg-pago" style="width:auto">
+        <label for="cpg-pago" style="margin:0">Já pago</label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModalCpGlobal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveCpGlobal()">Salvar</button>
     </div>
   </div>
 </div>
@@ -5082,6 +5138,92 @@ function abrirPageCpGlobal() {
   renderCpgTbl();
   if (typeof closeSB === 'function') closeSB();
   window.scrollTo(0, 0);
+}
+
+function openModalCpGlobal() {
+  if (_userRole === 'viewer') { toast('⛔ Sem permissão para editar'); return; }
+  if (!obras.length) { toast('⚠ Nenhuma obra cadastrada'); return; }
+
+  // Preenche seletor de obras (ativas e pausadas primeiro, depois concluídas)
+  const sel = document.getElementById('cpg-obra-sel');
+  sel.innerHTML = '<option value="">Selecione a obra…</option>' +
+    obras.filter(o => o.status !== 'concluida').map(o =>
+      `<option value="${o.id}">${o.codigo} – ${o.nome.split('–').slice(-1)[0].trim()}</option>`
+    ).join('') +
+    (obras.some(o => o.status === 'concluida') ?
+      '<optgroup label="Concluídas">' +
+      obras.filter(o => o.status === 'concluida').map(o =>
+        `<option value="${o.id}">${o.codigo} – ${o.nome.split('–').slice(-1)[0].trim()}</option>`
+      ).join('') + '</optgroup>' : '');
+
+  // Preenche bancos
+  const sb = document.getElementById('cpg-banco');
+  if (sb) sb.innerHTML = (ST.listas.bancos || []).map(b => `<option>${b}</option>`).join('');
+
+  // Preenche datalists
+  const dlItem = document.getElementById('cpg-itemref-list');
+  if (dlItem) dlItem.innerHTML = (ST.listas.itensReferencia || []).map(v => `<option value="${String(v).replace(/"/g,'&quot;')}"></option>`).join('');
+  const dlCc = document.getElementById('cpg-ccusto-list');
+  if (dlCc) dlCc.innerHTML = (ST.listas.centrosDeCusto || []).map(v => `<option value="${String(v).replace(/"/g,'&quot;')}"></option>`).join('');
+  const allSubs = Object.values(SUBS || {}).flat();
+  const dlSub = document.getElementById('cpg-subitem-list');
+  if (dlSub) dlSub.innerHTML = allSubs.map(v => `<option value="${String(v).replace(/"/g,'&quot;')}"></option>`).join('');
+
+  // Limpa campos
+  document.getElementById('cpg-nf').value = '';
+  document.getElementById('cpg-data').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('cpg-empresa').value = '';
+  document.getElementById('cpg-valor').value = '';
+  document.getElementById('cpg-parcelas').value = '';
+  document.getElementById('cpg-venc').value = '';
+  document.getElementById('cpg-itemref').value = '';
+  document.getElementById('cpg-subitem').value = '';
+  document.getElementById('cpg-ccusto').value = '';
+  document.getElementById('cpg-pago').checked = false;
+
+  document.getElementById('modalCpGlobal').classList.add('open');
+  setTimeout(() => sel.focus(), 250);
+}
+
+function closeModalCpGlobal() {
+  document.getElementById('modalCpGlobal').classList.remove('open');
+}
+
+function saveCpGlobal() {
+  if (_userRole === 'viewer') { toast('⛔ Sem permissão para editar'); return; }
+
+  const obraId = document.getElementById('cpg-obra-sel').value;
+  if (!obraId) { toast('⚠ Selecione a obra'); return; }
+
+  const obra = obras.find(o => o.id === obraId);
+  if (!obra) { toast('⚠ Obra não encontrada'); return; }
+  _ensureObraCpShape(obra);
+
+  const d = {
+    nf:          document.getElementById('cpg-nf').value.trim(),
+    data:        document.getElementById('cpg-data').value,
+    empresa:     document.getElementById('cpg-empresa').value.trim(),
+    valor:       parseFloat(document.getElementById('cpg-valor').value) || 0,
+    parcelas:    document.getElementById('cpg-parcelas').value.trim(),
+    venc:        document.getElementById('cpg-venc').value,
+    banco:       document.getElementById('cpg-banco').value,
+    itemRef:     document.getElementById('cpg-itemref').value.trim(),
+    subitem:     document.getElementById('cpg-subitem').value.trim(),
+    centroCusto: document.getElementById('cpg-ccusto').value.trim(),
+    pago:        !!document.getElementById('cpg-pago').checked
+  };
+
+  if (!d.empresa || !d.valor || !d.venc) { toast('⚠ Preencha empresa, valor e vencimento'); return; }
+
+  _uniqPush(ST.listas.itensReferencia, d.itemRef);
+  _uniqPush(ST.listas.centrosDeCusto, d.centroCusto);
+
+  obra.contasPagar.push({ id: obra.nextCpId++, ...d });
+  saveState();
+  closeModalCpGlobal();
+  renderCpgTbl();
+  renderSidebar();
+  toast(`✅ Boleto adicionado em ${obra.codigo}`);
 }
 
 function verificarAlertasCpProximos() {
