@@ -1823,7 +1823,7 @@ body.viewer-mode #fb-btn-pull { display:none }
 
       <div class="kpi-row" style="grid-template-columns:repeat(6,1fr)">
         <div class="kpi kg"><div class="kpi-l">Contrato</div><div class="kpi-v" id="o-contrato">—</div><div class="kpi-s" id="o-contrato-id">—</div></div>
-        <div class="kpi kgr"><div class="kpi-l">A Receber</div><div class="kpi-v pos" id="o-arec">—</div><div class="kpi-s">Saldo disponível</div></div>
+        <div class="kpi kgr"><div class="kpi-l">Saldo da Obra</div><div class="kpi-v pos" id="o-arec">—</div><div class="kpi-s" id="o-arec-sub">Créditos − débitos</div></div>
         <div class="kpi kr"><div class="kpi-l">Total Gasto</div><div class="kpi-v neg" id="o-gasto">—</div><div class="kpi-s" id="o-gasto-sub">—</div></div>
         <div class="kpi" style="border-color:rgba(59,91,219,.28);background:rgba(59,91,219,.07)"><div class="kpi-l" style="color:#74a0ff">🔄 Fat. Direto</div><div class="kpi-v" id="o-fat-direto" style="color:#74a0ff">—</div><div class="kpi-s">Não saiu do caixa</div></div>
         <div class="kpi kb"><div class="kpi-l">Execução Financeira</div><div class="kpi-v" id="o-exec">—</div><div class="kpi-s">do contrato</div></div>
@@ -2617,6 +2617,21 @@ const _fbDb   = window.db;          // alias interno (mantém compatibilidade)
 let _fbUser=null,_fbSyncing=false,_fbSaveTimer=null,_fbSnapshotUnsub=null;
 // Impede push automático durante os primeiros segundos após o login (carga inicial)
 let _fbLoginGrace=false;
+// Controle de alterações locais ainda não enviadas à nuvem
+let _fbDirty=false, _fbSaveSeq=0, _fbPushQueued=false;
+
+/* Une lançamentos vindos da nuvem com os locais (por id), sem apagar nada local */
+function _mergeLancamentosRemotos(remObras){
+  (remObras||[]).forEach(ro=>{
+    const lo=obras.find(o=>o.id===ro.id);
+    if(!lo){ obras.push(ro); return; }
+    if(!Array.isArray(lo.lancamentos)) lo.lancamentos=[];
+    const ids=new Set(lo.lancamentos.map(l=>l.id));
+    (ro.lancamentos||[]).forEach(rl=>{ if(!ids.has(rl.id)) lo.lancamentos.push(rl); });
+    const mx=Math.max(0,...lo.lancamentos.map(l=>l.id||0));
+    if(!lo.nextLancId||lo.nextLancId<=mx) lo.nextLancId=mx+1;
+  });
+}
 
 /* ── Salvar local + agendar push ── */
 function saveState(){
@@ -2627,6 +2642,7 @@ function saveState(){
   if (typeof verificarAlertasCpProximos === 'function') verificarAlertasCpProximos();
   // Não agenda push se usuário não está logado ou ainda está no período de carga inicial
   if(!_fbUser || _fbLoginGrace) return;
+  _fbSaveSeq++; _fbDirty=true;
   clearTimeout(_fbSaveTimer);
   _fbSaveTimer = setTimeout(()=>_fbPush(), 2000);
 }
@@ -2645,8 +2661,10 @@ function loadState(){
 
 /* ── Push: envia dados para o Firestore ── */
 async function _fbPush(){
-  if(!_fbUser||_fbSyncing) return;
+  if(!_fbUser) return;
+  if(_fbSyncing){ _fbPushQueued=true; return; }   // antes: o salvamento era descartado
   _fbSyncing=true; _fbSetStatus('syncing','⟳ Salvando');
+  const _seq=_fbSaveSeq;
   try{
     // ── Determina o UID de destino ──
     // Editor grava no espaço do admin (fonte de dados compartilhada)
@@ -2675,10 +2693,12 @@ async function _fbPush(){
     // disparar, localTS >= remoteTS e o pull seja ignorado (sem loop)
     localStorage.setItem('jc_lastUpdate', now);
     await batch.commit();
+    if(_seq===_fbSaveSeq) _fbDirty=false;
     _fbSetStatus('ok','✓ Salvo');
   }catch(err){
     console.error('FB push:', err);
     if(err.code === 'permission-denied'){
+      _fbDirty=false;
       _fbSetStatus('err','⚠ Sem permissão');
       _fbToast('❌ Firebase recusou a gravação.');
       const hp = document.getElementById('fb-rules-help');
@@ -2690,6 +2710,7 @@ async function _fbPush(){
     }
   }
   _fbSyncing=false;
+  if(_fbPushQueued){ _fbPushQueued=false; clearTimeout(_fbSaveTimer); _fbSaveTimer=setTimeout(()=>_fbPush(),500); }
 }
 
 /* ── Pull: baixa dados do Firestore ── */
@@ -2726,6 +2747,7 @@ async function _fbPull(){
     obraAtual = obraAtual ? (obras.find(o=>o.id===obraAtual.id)||null) : null;
     if(obraAtual){ renderObraVisao(); renderTbl(); }
     renderSidebar(); renderObrasGrid(); renderBnav(); renderGlobalIndicators();
+    if (typeof verificarAlertasCpProximos === 'function') verificarAlertasCpProximos();
     _fbToast('✅ Dados sincronizados da nuvem!');
   }catch(err){ console.error('FB pull:', err); _fbSetStatus('err','⚠ Erro'); }
 }
@@ -2755,6 +2777,7 @@ function renderizarObras(listaObras) {
   renderSidebar();
   renderObrasGrid();
   renderBnav(); renderGlobalIndicators();
+  if (typeof verificarAlertasCpProximos === 'function') verificarAlertasCpProximos();
 }
 
 /**
@@ -2822,6 +2845,14 @@ function carregarObrasTempoReal(uid) {
       const remoto = JSON.parse(data);
       const listaObras = remoto.obras || [];
       if (remoto.obraNextId) obraNextId = remoto.obraNextId;
+
+      // Há alterações locais ainda não enviadas: NÃO sobrescrever. Mescla e reenvia.
+      if (_fbDirty || _fbSyncing) {
+        _mergeLancamentosRemotos(listaObras);
+        renderizarObras(obras);
+        saveState();
+        return;
+      }
 
       localStorage.setItem('jc_dashboard_v1', JSON.stringify(listaObras));
       localStorage.setItem('jc_dashboard_meta', JSON.stringify({ obraNextId }));
@@ -3239,6 +3270,7 @@ async function _startPublicListener() {
         obraAtual = obraAtual ? (obras.find(o => o.id === obraAtual.id) || null) : null;
         if (obraAtual) { renderObraVisao(); renderTbl(); }
         renderSidebar(); renderObrasGrid(); renderBnav(); renderGlobalIndicators();
+        if (typeof verificarAlertasCpProximos === 'function') verificarAlertasCpProximos();
       }, err => console.warn('Public listener:', err));
   } catch(e) { console.warn('startPublicListener:', e); }
 }
@@ -3983,7 +4015,14 @@ function renderObraVisao(){
   const fatDiretoTotal=o.lancamentos.filter(l=>l.fatDireto).reduce((a,l)=>a+l.deb,0);
   document.getElementById('o-contrato').textContent=fmt(o.contrato);
   document.getElementById('o-contrato-id').textContent=o.codigo;
-  document.getElementById('o-arec').textContent=fmt(o.contrato-deb);
+  const saldoObra=cred-deb;
+  const elArec=document.getElementById('o-arec');
+  elArec.textContent=fmt(saldoObra);
+  elArec.className='kpi-v '+(saldoObra<0?'neg':'pos');
+  const elArecSub=document.getElementById('o-arec-sub');
+  if(elArecSub) elArecSub.textContent=o.contrato>0
+    ? 'Créditos − débitos · falta receber '+fmt(Math.max(o.contrato-cred,0))
+    : 'Créditos − débitos · ⚠ contrato não informado';
   document.getElementById('o-gasto').textContent=fmt(deb);
   document.getElementById('o-gasto-sub').textContent=o.lancamentos.length+' lançamentos';
   const elFatDir=document.getElementById('o-fat-direto');
@@ -4122,7 +4161,8 @@ function renderObraCustos(){
   document.getElementById('c-pes').textContent=fmt(pes);
   document.getElementById('c-ope').textContent=fmt(ope);
   document.getElementById('c-total').textContent=fmt(deb);
-  document.getElementById('c-periodo').textContent=o.nome;
+  const outrasCat=deb-mat-pes-ope;
+  document.getElementById('c-periodo').textContent=o.nome+(outrasCat>0.005?' · Outras categorias: '+fmt(outrasCat):'');
   // KPI faturamento direto
   const elFatD=document.getElementById('c-fat-direto');
   const elCaixa=document.getElementById('c-real-caixa');
@@ -4820,8 +4860,10 @@ function saveEntry(){
     fatDireto:!!document.getElementById('f-fat-direto').checked
   };
   if(!d.data||!d.desc){toast('⚠ Preencha data e descrição');return;}
+  if(!d.cred&&!d.deb){toast('⚠ Informe um valor em Crédito ou Débito');return;}
   if(editLancId){
     const i=obraAtual.lancamentos.findIndex(l=>l.id===editLancId);
+    if(i<0){toast('⚠ Lançamento não encontrado — atualize a página');return;}
     obraAtual.lancamentos[i]={...obraAtual.lancamentos[i],...d};
     toast('✓ Atualizado');
   } else {
@@ -5479,7 +5521,7 @@ function renderCpgTbl() {
     const pagLbl = r.dataPagamento ? String(r.dataPagamento).split('-').reverse().join('/') : '—';
     const stBadge = {
       vencido: `<span class="cpg-badge-vencido">🚨 VENCIDO</span>`,
-      proximo: `<span class="cpg-badge-proximo">⚠ ${dias}d</span>`,
+      proximo: `<span class="cpg-badge-proximo">${dias===0?'⚠ HOJE':'⚠ '+dias+'d'}</span>`,
       ok:      `<span class="cpg-badge-ok">${dias!=null?dias+'d':'—'}</span>`,
       pago:    `<span class="cpg-badge-pago">✓ Pago</span>`
     }[st] || '';
@@ -5899,27 +5941,33 @@ function verificarAlertasCpProximos() {
   if (!el) return;
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   const limite = new Date(hoje); limite.setDate(limite.getDate() + 5);
-  let vencidos = 0, proximos = 0, totalVal = 0;
-  obras.forEach(o => {
+  let vencidos = 0, hojeN = 0, proximos = 0, totalVal = 0;
+  (obras || []).forEach(o => {
     (o.contasPagar || []).forEach(r => {
-      if (r.pago) return;
-      const venc = new Date((r.venc||'') + 'T00:00:00');
-      if (venc < hoje) { vencidos++; totalVal += (parseFloat(r.valor)||0); }
-      else if (venc <= limite) { proximos++; totalVal += (parseFloat(r.valor)||0); }
+      if (r.pago || !r.venc) return;
+      const venc = new Date(r.venc + 'T00:00:00');
+      if (isNaN(venc.getTime())) return;
+      const v = parseFloat(r.valor) || 0;
+      if (venc < hoje)                         { vencidos++; totalVal += v; }
+      else if (venc.getTime() === hoje.getTime()) { hojeN++;    totalVal += v; }
+      else if (venc <= limite)                 { proximos++; totalVal += v; }
     });
   });
-  const total = vencidos + proximos;
-  if (total === 0) { el.classList.remove('visivel'); return; }
-  let partes = [];
-  if (vencidos > 0) partes.push(`<strong>${vencidos}</strong> boleto(s) vencido(s)`);
-  if (proximos > 0) partes.push(`<strong>${proximos}</strong> vencendo em 5 dias`);
+  if (vencidos + hojeN + proximos === 0) { el.classList.remove('visivel'); el.innerHTML = ''; return; }
+  const partes = [];
+  if (hojeN > 0)     partes.push(`<strong>${hojeN}</strong> vence(m) HOJE`);
+  if (vencidos > 0)  partes.push(`<strong>${vencidos}</strong> vencido(s)`);
+  if (proximos > 0)  partes.push(`<strong>${proximos}</strong> vencendo em até 5 dias`);
   el.innerHTML = `
     <span class="al-pulse"></span>
-    💳 CONTAS A PAGAR: ${partes.join(' / ')} · Total: <strong>${fmt2(totalVal)}</strong>
+    💳 CONTAS A PAGAR: ${partes.join(' · ')} · Total: <strong>${fmt2(totalVal)}</strong>
     <span class="al-cta">Ver Contas a Pagar →</span>
   `;
   el.classList.add('visivel');
 }
+// Reavalia a cada hora, ao voltar para a aba e na virada do dia
+setInterval(() => verificarAlertasCpProximos(), 60 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) verificarAlertasCpProximos(); });
 
 // ══ INIT ══
 loadState();
@@ -6114,30 +6162,6 @@ if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(err => console.warn('SW:', err));
   });
-}
-
-async function _notifToggle() {
-  const btn = document.getElementById('btn-notif-toggle');
-  const status = document.getElementById('notif-status');
-  if (!('Notification' in window)) {
-    if (status) status.textContent = '⚠ Seu navegador não suporta notificações.';
-    return;
-  }
-  if (Notification.permission === 'denied') {
-    if (status) status.textContent = '⚠ Notificações bloqueadas. Acesse as configurações do seu navegador/celular para permitir.';
-    return;
-  }
-  const perm = await Notification.requestPermission();
-  if (perm === 'granted') {
-    if (btn) { btn.textContent='🔔 Notificações ativas'; btn.style.background='rgba(47,158,68,.2)'; btn.style.borderColor='var(--green2)'; btn.style.color='#69db7c'; }
-    if (status) status.textContent = '✓ Você receberá avisos ao abrir o app nos dias de vencimento.';
-    localStorage.removeItem('jc_notif_dia'); // força verificação imediata
-    setTimeout(_notifVerificarBoletos, 500);
-    toast('🔔 Notificações ativadas!');
-  } else {
-    if (btn) { btn.textContent='🔕 Ativar notificações'; btn.style.background=''; btn.style.borderColor=''; btn.style.color=''; }
-    if (status) status.textContent = 'Permissão negada. Você pode alterar isso nas configurações do navegador.';
-  }
 }
 
 // Inicia notificações após 1s (dados já carregados)
